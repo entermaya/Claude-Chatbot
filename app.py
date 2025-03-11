@@ -4,7 +4,7 @@ from langchain.schema import HumanMessage, AIMessage
 
 # Set up Streamlit UI
 st.set_page_config(page_title="Claude Chatbot", layout="wide")
-st.title("Chat with Claude AI")
+st.title("Claude Bot")
 
 # Initialize session state for chat history
 if "messages" not in st.session_state:
