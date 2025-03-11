@@ -1,5 +1,4 @@
 import streamlit as st
-import shelve
 from langchain_anthropic import ChatAnthropic
 from langchain.schema import HumanMessage, AIMessage
 
@@ -7,52 +6,18 @@ from langchain.schema import HumanMessage, AIMessage
 st.set_page_config(page_title="Claude Chatbot", layout="wide")
 st.title("Chat with Claude AI")
 
-# Load chat history from shelve
-def load_chat_history():
-    with shelve.open("chat_history") as db:
-        return db.get("chat_sessions", [])
-
-def save_chat_history():
-    with shelve.open("chat_history") as db:
-        db["chat_sessions"] = st.session_state.chat_sessions
-
 # Initialize session state for chat history
 if "messages" not in st.session_state:
     st.session_state.messages = []
-if "chat_sessions" not in st.session_state:
-    st.session_state.chat_sessions = load_chat_history()
 if "current_chat" not in st.session_state:
     st.session_state.current_chat = "New Chat"
 
 # Sidebar settings
 st.sidebar.header("Settings")
-max_tokens = st.sidebar.slider("Max Tokens", min_value=50, max_value=4096, value=1700)
+max_tokens = st.sidebar.slider("Max Tokens", min_value=100, max_value=4096, value=1700)
 temperature = st.sidebar.slider("Temperature", min_value=0.0, max_value=1.0, value=0.7, step=0.05)
 thinking_mode = st.sidebar.toggle("Thinking Mode", value=True)
-thinking_token_budget = st.sidebar.slider("Thinking Token Budget", min_value=50, max_value=4096, value=1024)
-
-st.sidebar.header("Chat History")
-
-# Function to start a new chat session
-def start_new_chat():
-    if st.session_state.messages:
-        st.session_state.chat_sessions.insert(0, {  # Insert at the top
-            "name": f"Chat {len(st.session_state.chat_sessions) + 1}",
-            "messages": st.session_state.messages.copy()
-        })
-        save_chat_history()
-    st.session_state.messages = []
-    st.session_state.current_chat = f"Chat {len(st.session_state.chat_sessions) + 1}"
-
-# Button to start a new chat
-if st.sidebar.button("New Chat"):
-    start_new_chat()
-
-# Display past chat sessions in sidebar (latest first)
-for chat in st.session_state.chat_sessions:
-    if st.sidebar.button(chat["name"]):
-        st.session_state.messages = chat["messages"].copy()
-        st.session_state.current_chat = chat["name"]
+thinking_token_budget = st.sidebar.slider("Thinking Token Budget", min_value=1024, max_value=4096, value=1048)
 
 # Load API key from Streamlit secrets
 api_key_claude = st.secrets["ANTHROPIC_API_KEY"]
@@ -105,9 +70,6 @@ if user_query:
         st.session_state.messages.append(AIMessage(content=text_blocks))
     else:
         st.session_state.messages.append(AIMessage(content=bot_reply))
-    
-    # Save updated chat history
-    save_chat_history()
     
     # Display response with alignment
     st.markdown(f'<div style="text-align: right;"><b>You:</b> {user_query}</div>', unsafe_allow_html=True)
