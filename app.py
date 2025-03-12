@@ -20,6 +20,7 @@ if "uploaded_file" not in st.session_state:
 
 # Sidebar settings
 st.sidebar.header("Settings")
+uploaded_file = st.sidebar.file_uploader("Attach a file", type=["pdf", "jpeg", "png", "webp"], label_visibility="collapsed")
 max_tokens = st.sidebar.slider("Max Tokens", min_value=1024, max_value=128000, value=1700)
 temperature = st.sidebar.slider("Temperature", min_value=0.0, max_value=1.0, value=0.7, step=0.05)
 thinking_mode = st.sidebar.toggle("Thinking Mode", value=True)
@@ -65,7 +66,7 @@ for message in st.session_state.messages:
 
 # Chat input with file attachment
 user_query = st.chat_input("Enter your message:", key="user_input")
-uploaded_file = st.file_uploader("Attach a file", type=["pdf", "jpeg", "png", "webp"], label_visibility="collapsed")
+# uploaded_file = st.file_uploader("Attach a file", type=["pdf", "jpeg", "png", "webp"], label_visibility="collapsed")
 if uploaded_file:
     st.session_state.uploaded_file = uploaded_file
 
