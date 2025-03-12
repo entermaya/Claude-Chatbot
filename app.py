@@ -118,6 +118,10 @@ if user_query:
     
     # Generate response with context
     response = model_to_use(st.session_state.messages)
+
+    if st.session_state.uploaded_file:
+        st.session_state.messages.pop()
+        st.session_state.messages.append(HumanMessage(content=user_query))
     
     # Extract relevant content
     if thinking_mode:
