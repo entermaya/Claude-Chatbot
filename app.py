@@ -3,18 +3,50 @@ import anthropic
 import os
 import copy
 import base64
+import firebase_admin
+from firebase_admin import credentials, firestore
+import json
 
 # Set up Streamlit UI
 st.set_page_config(page_title="Claude Chatbot", layout="wide")
 st.title("Chat with Claude AI")
 
-# Initialize session state for chat history
+# Load Firebase credentials (store in Streamlit secrets)
+if not firebase_admin._apps:
+    cred = credentials.Certificate(json.loads(st.secrets["FIREBASE_CREDENTIALS"]))
+    firebase_admin.initialize_app(cred)
+db = firestore.client()
+
+# Function to start a new chat session
+def start_new_chat():
+    new_chat_name = f"Chat {len(st.session_state.chat_sessions) + 1}"
+    st.session_state.chat_sessions[new_chat_name] = {"messages": []}  # Store in Firestore
+    st.session_state.current_chat = new_chat_name
+    st.session_state.messages = []
+    st.session_state.uploaded_file = None  # Reset file input
+    save_chat_sessions()
+
+# Save chat sessions to Firestore
+def save_chat_sessions():
+    for session_name, data in st.session_state.chat_sessions.items():
+        db.collection("chat_sessions").document(session_name).set({"messages": data["messages"]})
+
+# Load chat sessions from Firestore
+def load_chat_sessions():
+    docs = db.collection("chat_sessions").stream()
+    st.session_state.chat_sessions = {doc.id: {"messages": doc.to_dict().get("messages", [])} for doc in docs}
+    
+    # If Firestore is empty, create a default chat session
+    if not st.session_state.chat_sessions:
+        start_new_chat()
+
 if "messages" not in st.session_state:
     st.session_state.messages = []
 if "chat_sessions" not in st.session_state:
-    st.session_state.chat_sessions = {"Chat 1": {"messages": []}}
+    st.session_state.chat_sessions = {}
+    load_chat_sessions()
 if "current_chat" not in st.session_state:
-    st.session_state.current_chat = "Chat 1"
+    st.session_state.current_chat = None
 if "uploaded_file" not in st.session_state:
     st.session_state.uploaded_file = None
 
@@ -27,25 +59,27 @@ thinking_mode = st.sidebar.toggle("Thinking Mode", value=True)
 thinking_token_budget = st.sidebar.slider("Thinking Token Budget", min_value=1024, max_value=128000, value=1048)
 
 st.sidebar.header("Chat History")
+st.sidebar.button("New Chat", on_click=start_new_chat)
 
-# Function to start a new chat session
-def start_new_chat():
-    new_chat_name = f"Chat {len(st.session_state.chat_sessions) + 1}"
-    st.session_state.chat_sessions[new_chat_name] = {"messages": []}  # Store in dictionary
-    st.session_state.current_chat = new_chat_name
-    st.session_state.messages = []
-    st.session_state.uploaded_file = None  # Reset file input
-
-# Button to start a new chat
-if st.sidebar.button("New Chat"):
+# Ensure there is at least one chat session
+if not st.session_state.chat_sessions:
     start_new_chat()
-    st.rerun()
 
 # Display chat sessions in reversed order (latest at top)
 chat_keys = list(st.session_state.chat_sessions.keys())[::-1]
-selected_chat = st.sidebar.radio("Chat Sessions", chat_keys, index=chat_keys.index(st.session_state.current_chat))
 
-if selected_chat != st.session_state.current_chat:
+# Prevent errors if no chat exists
+if not chat_keys:
+    selected_chat = None
+    st.sidebar.write("No chat history found. Start a new chat.")
+else:
+    selected_chat = st.sidebar.radio(
+        "Chat Sessions", 
+        chat_keys, 
+        index=chat_keys.index(st.session_state.current_chat) if st.session_state.current_chat in chat_keys else 0
+    )
+
+if selected_chat and selected_chat != st.session_state.current_chat:
     st.session_state.current_chat = selected_chat
     st.session_state.messages = st.session_state.chat_sessions[selected_chat]["messages"][:]
     st.session_state.uploaded_file = None  # Reset file input when switching chats
@@ -56,7 +90,7 @@ api_key_claude = st.secrets["ANTHROPIC_API_KEY"]
 
 # Initialize Anthropic client
 client = anthropic.Anthropic(
-    api_key = api_key_claude,
+    api_key=api_key_claude,
 )
 
 # Display chat history with alignment styles
@@ -105,42 +139,35 @@ if user_query:
 
     st.markdown(f'<div style="text-align: right;"><b>You:</b> {user_query}</div>', unsafe_allow_html=True)
 
-    thinking_configs = {"type": "disabled"}
+    thinking_configs = {"type": "enabled", "budget_tokens": thinking_token_budget} if thinking_mode else {"type": "disabled"}
+    
     if thinking_mode:
-        thinking_configs = {
-                "type": "enabled",
-                "budget_tokens": thinking_token_budget
-            }
         temperature = 1
-
     # Placeholder for streaming response
     response_placeholder = st.empty()
     full_response = ""
+    
     # Initialize Claude models
     chat_model = client.beta.messages.stream(
-            model="claude-3-7-sonnet-20250219",
-            max_tokens=max_tokens,
-            temperature=temperature,
-            messages=st.session_state.messages,
-            betas=["output-128k-2025-02-19"],
-            thinking=thinking_configs
-        )
-
+        model="claude-3-7-sonnet-20250219",
+        max_tokens=max_tokens,
+        temperature=temperature,
+        messages=st.session_state.messages,
+        betas=["output-128k-2025-02-19"],
+        thinking=thinking_configs
+    )
     
     with chat_model as stream:
         for text in stream.text_stream:
             full_response += text or ""
             response_placeholder.markdown(f'<div style="text-align: left;"><b>Claude:</b><br>{full_response}</div>', unsafe_allow_html=True)
     
-    if st.session_state.uploaded_file:
-        st.session_state.messages.pop()
-        st.session_state.messages.append({"role": "user", "content": user_query})
-    
     # Add bot response to chat history
     st.session_state.messages.append({"role": "assistant", "content": full_response})
     
-    # Save messages to the correct chat session
+    # Save messages to Firestore
     st.session_state.chat_sessions[st.session_state.current_chat]["messages"] = st.session_state.messages[:]
+    save_chat_sessions()
     
     # Clear the uploaded file after processing
     st.session_state.uploaded_file = None
