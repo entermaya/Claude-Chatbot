@@ -12,7 +12,7 @@ st.title("Chat with Claude AI")
 if "messages" not in st.session_state:
     st.session_state.messages = []
 if "chat_sessions" not in st.session_state:
-    st.session_state.chat_sessions = [{"name": "Chat 1", "messages": []}]
+    st.session_state.chat_sessions = {"Chat 1": {"messages": []}}
 if "current_chat" not in st.session_state:
     st.session_state.current_chat = "Chat 1"
 if "uploaded_file" not in st.session_state:
@@ -31,24 +31,25 @@ st.sidebar.header("Chat History")
 # Function to start a new chat session
 def start_new_chat():
     new_chat_name = f"Chat {len(st.session_state.chat_sessions) + 1}"
-    st.session_state.chat_sessions.insert(0, {  # Insert at the top
-        "name": new_chat_name,
-        "messages": []  # Start fresh
-    })
-    st.session_state.messages = []
+    st.session_state.chat_sessions[new_chat_name] = {"messages": []}  # Store in dictionary
     st.session_state.current_chat = new_chat_name
+    st.session_state.messages = []
     st.session_state.uploaded_file = None  # Reset file input
 
 # Button to start a new chat
 if st.sidebar.button("New Chat"):
     start_new_chat()
+    st.rerun()
 
-# Display past chat sessions in sidebar (latest first)
-for i, chat in enumerate(st.session_state.chat_sessions):
-    if st.sidebar.button(chat["name"], key=f"chat_{i}"):
-        st.session_state.messages = copy.deepcopy(chat["messages"])  # Deep copy to avoid overwriting previous chats
-        st.session_state.current_chat = chat["name"]
-        st.session_state.uploaded_file = None  # Reset file input when switching chats
+# Display chat sessions in reversed order (latest at top)
+chat_keys = list(st.session_state.chat_sessions.keys())[::-1]
+selected_chat = st.sidebar.radio("Chat Sessions", chat_keys, index=chat_keys.index(st.session_state.current_chat))
+
+if selected_chat != st.session_state.current_chat:
+    st.session_state.current_chat = selected_chat
+    st.session_state.messages = st.session_state.chat_sessions[selected_chat]["messages"][:]
+    st.session_state.uploaded_file = None  # Reset file input when switching chats
+    st.rerun()
 
 # Load API key from Streamlit secrets
 api_key_claude = st.secrets["ANTHROPIC_API_KEY"]
@@ -66,7 +67,6 @@ for message in st.session_state.messages:
 
 # Chat input with file attachment
 user_query = st.chat_input("Enter your message:", key="user_input")
-# uploaded_file = st.file_uploader("Attach a file", type=["pdf", "jpeg", "png", "webp"], label_visibility="collapsed")
 if uploaded_file:
     st.session_state.uploaded_file = uploaded_file
 
@@ -80,7 +80,6 @@ if st.session_state.uploaded_file is not None:
     elif file_extension in [".jpeg", ".png", ".webp"]:
         doc_type = "image"
         media_type_prefix = "image"
-
 
 if user_query:
     if st.session_state.uploaded_file:
@@ -133,21 +132,15 @@ if user_query:
             full_response += text or ""
             response_placeholder.markdown(f'<div style="text-align: left;"><b>Claude:</b><br>{full_response}</div>', unsafe_allow_html=True)
     
-
     if st.session_state.uploaded_file:
         st.session_state.messages.pop()
         st.session_state.messages.append({"role": "user", "content": user_query})
-    
     
     # Add bot response to chat history
     st.session_state.messages.append({"role": "assistant", "content": full_response})
     
     # Save messages to the correct chat session
-    for chat in st.session_state.chat_sessions:
-        if chat["name"] == st.session_state.current_chat:
-            chat["messages"] = copy.deepcopy(st.session_state.messages)
-            break
-    
+    st.session_state.chat_sessions[st.session_state.current_chat]["messages"] = st.session_state.messages[:]
     
     # Clear the uploaded file after processing
     st.session_state.uploaded_file = None
