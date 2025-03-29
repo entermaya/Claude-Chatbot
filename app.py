@@ -23,7 +23,7 @@ def start_new_chat():
     st.session_state.chat_sessions[new_chat_name] = {"messages": []}  # Store in Firestore
     st.session_state.current_chat = new_chat_name
     st.session_state.messages = []
-    st.session_state.uploaded_file = None  # Reset file input
+    st.session_state.uploaded_files = None  # Reset file input
     save_chat_sessions()
 
 # Save chat sessions to Firestore
@@ -47,12 +47,12 @@ if "chat_sessions" not in st.session_state:
     load_chat_sessions()
 if "current_chat" not in st.session_state:
     st.session_state.current_chat = None
-if "uploaded_file" not in st.session_state:
-    st.session_state.uploaded_file = None
+if "uploaded_files" not in st.session_state:
+    st.session_state.uploaded_files = None
 
 # Sidebar settings
 st.sidebar.header("Settings")
-uploaded_file = st.sidebar.file_uploader("Attach a file", type=["pdf", "jpeg", "png", "webp"], label_visibility="collapsed")
+uploaded_files = st.sidebar.file_uploader("Attach a file", type=["pdf", "jpeg", "png", "webp"], label_visibility="collapsed", accept_multiple_files=True)
 max_tokens = st.sidebar.slider("Max Tokens", min_value=1024, max_value=128000, value=1700)
 temperature = st.sidebar.slider("Temperature", min_value=0.0, max_value=1.0, value=0.7, step=0.05)
 thinking_mode = st.sidebar.toggle("Thinking Mode", value=True)
@@ -82,7 +82,7 @@ else:
 if selected_chat and selected_chat != st.session_state.current_chat:
     st.session_state.current_chat = selected_chat
     st.session_state.messages = st.session_state.chat_sessions[selected_chat]["messages"][:]
-    st.session_state.uploaded_file = None  # Reset file input when switching chats
+    st.session_state.uploaded_files = None  # Reset file input when switching chats
     st.rerun()
 
 # Load API key from Streamlit secrets
@@ -101,36 +101,53 @@ for message in st.session_state.messages:
 
 # Chat input with file attachment
 user_query = st.chat_input("Enter your message:", key="user_input")
-if uploaded_file:
-    st.session_state.uploaded_file = uploaded_file
+if uploaded_files:
+    st.session_state.uploaded_files = uploaded_files
 
 # Process file upload
-if st.session_state.uploaded_file is not None:
-    encoded_data = base64.standard_b64encode(st.session_state.uploaded_file.getvalue()).decode("utf-8")
-    file_extension = os.path.splitext(st.session_state.uploaded_file.name)[1]
-    if file_extension == ".pdf":
-        doc_type = "document"
-        media_type_prefix = "application"
-    elif file_extension in [".jpeg", ".png", ".webp"]:
-        doc_type = "image"
-        media_type_prefix = "image"
+if st.session_state.uploaded_files is not None:
+
+    encoded_data_list = []
+    doc_types = []
+    media_type_prefixes = []
+    file_extension_list = []
+    
+    for uploaded_file in st.session_state.uploaded_files:
+        encoded_data = base64.standard_b64encode(uploaded_file.getvalue()).decode("utf-8")
+        file_extension = os.path.splitext(uploaded_file.name)[1]
+        
+        if file_extension == ".pdf":
+            doc_type = "document"
+            media_type_prefix = "application"
+        elif file_extension in [".jpeg", ".png", ".webp"]:
+            doc_type = "image"
+            media_type_prefix = "image"
+        
+        file_extension_list.append(file_extension)
+        encoded_data_list.append(encoded_data)
+        doc_types.append(doc_type)
+        media_type_prefixes.append(media_type_prefix)
 
 if user_query:
-    if st.session_state.uploaded_file:
-        content_for_hm = [
-                {
-                    "type": doc_type,
+    if st.session_state.uploaded_files:
+        content_for_hm = []
+
+        for i, file in enumerate(st.session_state.uploaded_files):
+            file_input = {
+                    "type": doc_types[i],
                     "source": {
                         "type": "base64",
-                        "media_type": media_type_prefix + "/" + file_extension[1:],
-                        "data": encoded_data
+                        "media_type": media_type_prefixes[i] + "/" + file_extension_list[i][1:],
+                        "data": encoded_data_list[i]
                     }
-                },
-                {
+                }
+            content_for_hm.append(file_input)
+        
+        user_input = {
                     "type": "text",
                     "text": user_query if user_query else " "
-                }
-            ]
+                    }
+        content_for_hm.append(user_input)
     else:
         content_for_hm = user_query
 
@@ -162,6 +179,9 @@ if user_query:
             full_response += text or ""
             response_placeholder.markdown(f'<div style="text-align: left;"><b>Claude:</b><br>{full_response}</div>', unsafe_allow_html=True)
     
+    st.session_state.messages.pop()
+    st.session_state.messages.append({"role": "user", "content": user_query})
+
     # Add bot response to chat history
     st.session_state.messages.append({"role": "assistant", "content": full_response})
     
