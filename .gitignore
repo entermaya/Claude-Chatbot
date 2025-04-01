@@ -2,3 +2,4 @@ chat_history.db
 myenv/
 .streamlit/secrets.toml
 zain-claude-bot-firebase-adminsdk-fbsvc-dcd534f755.json
+__pycache__/

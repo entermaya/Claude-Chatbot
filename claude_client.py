@@ -43,9 +43,13 @@ class ClaudeClient:
             thinking=thinking_configs
         )
         
+        # Placeholder for streaming response
+        response_placeholder = st.empty()
+
         full_response = ""
         with chat_model as stream:
             for text in stream.text_stream:
                 full_response += text or ""
-                
+                response_placeholder.markdown(f'<div style="text-align: left;"><b>Claude:</b><br>{full_response}</div>', unsafe_allow_html=True)
+        
         return full_response 

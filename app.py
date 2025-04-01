@@ -1,8 +1,5 @@
 import streamlit as st
 import anthropic
-import os
-import copy
-import base64
 import firebase_admin
 from firebase_admin import credentials, firestore
 import json
@@ -26,7 +23,7 @@ def start_new_chat():
     st.session_state.current_chat = new_chat_name
     st.session_state.messages = []
     st.session_state.uploaded_files = None  # Reset file input
-    # save_chat_sessions()
+    save_chat_sessions()
 
 # Save chat sessions to Firestore
 def save_chat_sessions():
@@ -114,7 +111,6 @@ if user_query:
     st.markdown(f'<div style="text-align: right;"><b>You:</b> {user_query}</div>', unsafe_allow_html=True)
 
     # Placeholder for streaming response
-    response_placeholder = st.empty()
     
     # Get response from Claude
     full_response = claude_client.stream_response(
@@ -125,7 +121,6 @@ if user_query:
         thinking_token_budget=thinking_token_budget
     )
     
-    response_placeholder.markdown(f'<div style="text-align: left;"><b>Claude:</b><br>{full_response}</div>', unsafe_allow_html=True)
     
     st.session_state.messages.pop()
     st.session_state.messages.append({"role": "user", "content": user_query})
@@ -135,7 +130,7 @@ if user_query:
     
     # Save messages to Firestore
     st.session_state.chat_sessions[st.session_state.current_chat]["messages"] = st.session_state.messages[:]
-    # save_chat_sessions()
+    save_chat_sessions()
     
     # Clear the uploaded file after processing
     st.session_state.uploaded_file = None
