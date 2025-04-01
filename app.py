@@ -6,6 +6,8 @@ import base64
 import firebase_admin
 from firebase_admin import credentials, firestore
 import json
+from file_processor import prepare_content_for_hm
+from claude_client import ClaudeClient
 
 # Set up Streamlit UI
 st.set_page_config(page_title="Claude Chatbot", layout="wide")
@@ -24,7 +26,7 @@ def start_new_chat():
     st.session_state.current_chat = new_chat_name
     st.session_state.messages = []
     st.session_state.uploaded_files = None  # Reset file input
-    save_chat_sessions()
+    # save_chat_sessions()
 
 # Save chat sessions to Firestore
 def save_chat_sessions():
@@ -88,10 +90,8 @@ if selected_chat and selected_chat != st.session_state.current_chat:
 # Load API key from Streamlit secrets
 api_key_claude = st.secrets["ANTHROPIC_API_KEY"]
 
-# Initialize Anthropic client
-client = anthropic.Anthropic(
-    api_key=api_key_claude,
-)
+# Initialize Claude client
+claude_client = ClaudeClient(api_key_claude)
 
 # Display chat history with alignment styles
 for message in st.session_state.messages:
@@ -104,80 +104,28 @@ user_query = st.chat_input("Enter your message:", key="user_input")
 if uploaded_files:
     st.session_state.uploaded_files = uploaded_files
 
-# Process file upload
-if st.session_state.uploaded_files is not None:
-
-    encoded_data_list = []
-    doc_types = []
-    media_type_prefixes = []
-    file_extension_list = []
-    
-    for uploaded_file in st.session_state.uploaded_files:
-        encoded_data = base64.standard_b64encode(uploaded_file.getvalue()).decode("utf-8")
-        file_extension = os.path.splitext(uploaded_file.name)[1]
-        
-        if file_extension == ".pdf":
-            doc_type = "document"
-            media_type_prefix = "application"
-        elif file_extension in [".jpeg", ".png", ".webp"]:
-            doc_type = "image"
-            media_type_prefix = "image"
-        
-        file_extension_list.append(file_extension)
-        encoded_data_list.append(encoded_data)
-        doc_types.append(doc_type)
-        media_type_prefixes.append(media_type_prefix)
-
 if user_query:
-    if st.session_state.uploaded_files:
-        content_for_hm = []
-
-        for i, file in enumerate(st.session_state.uploaded_files):
-            file_input = {
-                    "type": doc_types[i],
-                    "source": {
-                        "type": "base64",
-                        "media_type": media_type_prefixes[i] + "/" + file_extension_list[i][1:],
-                        "data": encoded_data_list[i]
-                    }
-                }
-            content_for_hm.append(file_input)
-        
-        user_input = {
-                    "type": "text",
-                    "text": user_query if user_query else " "
-                    }
-        content_for_hm.append(user_input)
-    else:
-        content_for_hm = user_query
+    # Prepare content using the file processor
+    content_for_hm = prepare_content_for_hm(user_query, st.session_state.uploaded_files)
 
     # Add user input to chat history
     st.session_state.messages.append({"role": "user", "content": content_for_hm})
 
     st.markdown(f'<div style="text-align: right;"><b>You:</b> {user_query}</div>', unsafe_allow_html=True)
 
-    thinking_configs = {"type": "enabled", "budget_tokens": thinking_token_budget} if thinking_mode else {"type": "disabled"}
-    
-    if thinking_mode:
-        temperature = 1
     # Placeholder for streaming response
     response_placeholder = st.empty()
-    full_response = ""
     
-    # Initialize Claude models
-    chat_model = client.beta.messages.stream(
-        model="claude-3-7-sonnet-20250219",
+    # Get response from Claude
+    full_response = claude_client.stream_response(
+        messages=st.session_state.messages,
         max_tokens=max_tokens,
         temperature=temperature,
-        messages=st.session_state.messages,
-        betas=["output-128k-2025-02-19"],
-        thinking=thinking_configs
+        thinking_mode=thinking_mode,
+        thinking_token_budget=thinking_token_budget
     )
     
-    with chat_model as stream:
-        for text in stream.text_stream:
-            full_response += text or ""
-            response_placeholder.markdown(f'<div style="text-align: left;"><b>Claude:</b><br>{full_response}</div>', unsafe_allow_html=True)
+    response_placeholder.markdown(f'<div style="text-align: left;"><b>Claude:</b><br>{full_response}</div>', unsafe_allow_html=True)
     
     st.session_state.messages.pop()
     st.session_state.messages.append({"role": "user", "content": user_query})
@@ -187,7 +135,7 @@ if user_query:
     
     # Save messages to Firestore
     st.session_state.chat_sessions[st.session_state.current_chat]["messages"] = st.session_state.messages[:]
-    save_chat_sessions()
+    # save_chat_sessions()
     
     # Clear the uploaded file after processing
     st.session_state.uploaded_file = None
